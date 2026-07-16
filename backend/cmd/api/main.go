@@ -32,7 +32,10 @@ func main() {
 	// Initialize services
 	userService := services.NewUserService(userRepo)
 	walletService := services.NewWalletService(walletRepo)
-	transactionService := services.NewTransactionService(transactionRepo)
+	//mock exchange
+	exchangeService := services.NewMockExchangeService()
+	//transaction service
+	transactionService := services.NewTransactionService(transactionRepo, exchangeService, walletRepo)
 
 	// Initialize handlers
 	userHandler := handlers.NewUserHandler(userService)

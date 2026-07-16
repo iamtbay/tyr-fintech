@@ -29,7 +29,7 @@ func NewUserHandler(userService UserService) *UserHandler {
 func (h *UserHandler) Register(c *gin.Context) {
 	var req dto.RegisterUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.HandleValidationError(c, err)
 		return
 	}
 

@@ -17,6 +17,7 @@ type Transaction struct {
 	FromWalletNumber int64             `db:"from_wallet_number" json:"from_wallet_number"`
 	ToWalletNumber   int64             `db:"to_wallet_number" json:"to_wallet_number"`
 	Amount           int64             `db:"amount" json:"amount"`
+	ConvertedAmount  int64             `db:"converted_amount" json:"converted_amount"`
 	Status           TransactionStatus `db:"status" json:"status" validate:"oneof=PENDING COMPLETED FAILED"`
 	CreatedAt        time.Time         `db:"created_at" json:"created_at"`
 }

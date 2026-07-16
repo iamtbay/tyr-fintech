@@ -12,7 +12,7 @@ import (
 type WalletRepository interface {
 	Create(ctx context.Context, wallet *models.Wallet) error
 	GetByUserID(ctx context.Context, userID string) ([]*models.Wallet, error)
-	GetByID(ctx context.Context, walletID string) (int64, error)
+	GetWalletByID(ctx context.Context, walletID int64) (*models.WalletResponse, error)
 	Delete(ctx context.Context, userID, walletID string) error
 }
 
@@ -31,7 +31,7 @@ func (s *WalletService) GetByUserID(ctx context.Context, userID string) ([]*mode
 // CREATE WALLET
 func (s *WalletService) CreateWallet(ctx context.Context, req *dto.CreateWallet) error {
 	if req.Currency != "TRY" && req.Currency != "USD" && req.Currency != "EUR" {
-		return errors.New("Invalid Currency")
+		return errors.New("Unsupported currency type. Supported currencies are TRY, USD, and EUR.")
 	}
 	err := s.walletRepo.Create(ctx, &models.Wallet{
 		ID:       uuid.New().String(),
@@ -45,12 +45,5 @@ func (s *WalletService) CreateWallet(ctx context.Context, req *dto.CreateWallet)
 }
 
 func (s *WalletService) DeleteWallet(ctx context.Context, userID string, walletID string) error {
-	balance, err := s.walletRepo.GetByID(ctx, walletID)
-	if err != nil {
-		return err
-	}
-	if balance > 0 {
-		return errors.New("cannot delete with balance greater than 0")
-	}
 	return s.walletRepo.Delete(ctx, userID, walletID)
 }

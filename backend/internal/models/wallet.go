@@ -11,6 +11,11 @@ type Wallet struct {
 	WalletNumber int64          `db:"wallet_number" json:"wallet_number"`
 }
 
+type WalletResponse struct {
+	Balance      int64          `db:"balance" json:"balance"`
+	Currency     WalletCurrency `db:"currency" json:"currency"`
+}
+
 type WalletCurrency string
 
 const (

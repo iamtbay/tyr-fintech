@@ -29,15 +29,15 @@ func (r *WalletRepository) Create(ctx context.Context, wallet *models.Wallet) er
 
 // GET WALLET BY ID
 
-func (r *WalletRepository) GetByID(ctx context.Context, walletID string) (int64, error) {
-	query := `SELECT balance FROM wallets WHERE id = $1 AND deleted_at IS NULL`
+func (r *WalletRepository) GetWalletByID(ctx context.Context, walletID int64) (*models.WalletResponse, error) {
+	query := `SELECT balance,currency FROM wallets WHERE wallet_number = $1 AND deleted_at IS NULL`
 	row := r.pool.QueryRow(ctx, query, walletID)
-	var balance int64
-	err := row.Scan(&balance)
+	var walletResponse models.WalletResponse
+	err := row.Scan(&walletResponse.Balance, &walletResponse.Currency)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return balance, nil
+	return &walletResponse, nil
 }
 
 // GET WALLETS
@@ -76,7 +76,7 @@ func (r *WalletRepository) Delete(ctx context.Context, userID, walletID string) 
 	}
 
 	if balance > 0 {
-		return errors.New("Balance must be 0")
+		return errors.New("Cannot delete a wallet with a non-zero balance. Please empty or transfer funds first.")
 	}
 
 	_, err = tx.Exec(ctx, `UPDATE wallets SET deleted_at = NOW() WHERE user_id = $1 AND id = $2`, userID, walletID)

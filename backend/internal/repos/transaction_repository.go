@@ -18,7 +18,7 @@ func NewTransactionRepository(pool *pgxpool.Pool) *TransactionRepository {
 }
 
 // Transfer
-func (r *TransactionRepository) Transfer(ctx context.Context, req *dto.TransferRequest) error {
+func (r *TransactionRepository) Transfer(ctx context.Context, req *dto.TransferRequest, convertedAmount int64) error {
 	if req.FromWalletNumber == req.ToWalletNumber {
 		return errors.New("cannot transfer to the same wallet")
 	}
@@ -34,7 +34,7 @@ func (r *TransactionRepository) Transfer(ctx context.Context, req *dto.TransferR
 		return err
 	}
 	if resIdemp.RowsAffected() == 0 {
-		return errors.New("transaction already processed")
+		return errors.New("This transaction has already been processed.")
 	}
 
 	firstNumber := req.FromWalletNumber
@@ -47,30 +47,22 @@ func (r *TransactionRepository) Transfer(ctx context.Context, req *dto.TransferR
 	var firstID, firstCurrency string
 	err = tx.QueryRow(ctx, `SELECT id, currency FROM wallets WHERE wallet_number=$1 AND deleted_at IS NULL FOR UPDATE`, firstNumber).Scan(&firstID, &firstCurrency)
 	if err != nil {
-		return errors.New("wallet not found")
+		return errors.New("Source or destination wallet could not be found.")
 	}
 
 	var secondID, secondCurrency string
 	err = tx.QueryRow(ctx, `SELECT id, currency FROM wallets WHERE wallet_number=$1 AND deleted_at IS NULL FOR UPDATE`, secondNumber).Scan(&secondID, &secondCurrency)
 	if err != nil {
-		return errors.New("wallet not found")
+		return errors.New("Source or destination wallet could not be found.")
 	}
 
-	var fromID, toID, fromCurrency, toCurrency string
+	var fromID, toID string
 	if firstNumber == req.FromWalletNumber {
 		fromID = firstID
-		fromCurrency = firstCurrency
 		toID = secondID
-		toCurrency = secondCurrency
 	} else {
 		fromID = secondID
-		fromCurrency = secondCurrency
 		toID = firstID
-		toCurrency = firstCurrency
-	}
-
-	if fromCurrency != toCurrency {
-		return errors.New("currency mismatch: cannot transfer between different currencies")
 	}
 
 	res, err := tx.Exec(ctx, `UPDATE wallets SET balance=balance-$1 WHERE id=$2 AND balance>=$1`, req.Amount, fromID)
@@ -78,15 +70,15 @@ func (r *TransactionRepository) Transfer(ctx context.Context, req *dto.TransferR
 		return err
 	}
 	if res.RowsAffected() == 0 {
-		return errors.New("insufficient balance")
+		return errors.New("Insufficient funds in the source wallet to complete this transfer.")
 	}
 
-	_, err = tx.Exec(ctx, `UPDATE wallets SET balance=balance+$1 WHERE id=$2`, req.Amount, toID)
+	_, err = tx.Exec(ctx, `UPDATE wallets SET balance=balance+$1 WHERE id=$2`, convertedAmount, toID)
 	if err != nil {
 		return err
 	}
 
-	_, err = tx.Exec(ctx, `INSERT INTO transactions(id,from_wallet_id,to_wallet_id,amount,status) VALUES($1,$2,$3,$4,$5)`, req.TransactionID, fromID, toID, req.Amount, models.StatusCompleted)
+	_, err = tx.Exec(ctx, `INSERT INTO transactions(id,from_wallet_id,to_wallet_id,amount,converted_amount,status) VALUES($1,$2,$3,$4,$5,$6)`, req.TransactionID, fromID, toID, req.Amount, convertedAmount, models.StatusCompleted)
 	if err != nil {
 		return err
 	}
@@ -104,6 +96,7 @@ func (r *TransactionRepository) GetTransactionsByWalletID(ctx context.Context, w
 		w_from.wallet_number as from_wallet_number,
 		w_to.wallet_number as to_wallet_number,
 		t.amount,
+		COALESCE(t.converted_amount, t.amount) as converted_amount,
 		t.status,
 		t.created_at
 		FROM transactions t
@@ -121,7 +114,7 @@ func (r *TransactionRepository) GetTransactionsByWalletID(ctx context.Context, w
 	var transactions []*models.Transaction
 	for rows.Next() {
 		var t models.Transaction
-		err := rows.Scan(&t.ID, &t.FromWalletID, &t.ToWalletID, &t.FromWalletNumber, &t.ToWalletNumber, &t.Amount, &t.Status, &t.CreatedAt)
+		err := rows.Scan(&t.ID, &t.FromWalletID, &t.ToWalletID, &t.FromWalletNumber, &t.ToWalletNumber, &t.Amount, &t.ConvertedAmount, &t.Status, &t.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

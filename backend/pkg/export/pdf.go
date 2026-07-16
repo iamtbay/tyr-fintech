@@ -44,11 +44,15 @@ func TransactionsToPDF(walletID string, transactions []*models.Transaction) ([]b
 	pdf.SetFont("Arial", "", 9)
 	pdf.SetTextColor(30, 41, 59)
 	for _, tx := range transactions {
+		amount := tx.Amount
+		if tx.FromWalletID != walletID {
+			amount = tx.ConvertedAmount
+		}
 		//showing only first 8 digit of wallet number for security
 		pdf.CellFormat(55, 8, tx.ID[:8], "1", 0, "C", false, 0, "")
 		pdf.CellFormat(40, 8, fmt.Sprintf("%d", tx.FromWalletNumber), "1", 0, "C", false, 0, "")
 		pdf.CellFormat(40, 8, fmt.Sprintf("%d", tx.ToWalletNumber), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(25, 8, fmt.Sprintf("%d", tx.Amount), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(25, 8, fmt.Sprintf("%d", amount), "1", 0, "R", false, 0, "")
 		pdf.CellFormat(30, 8, tx.CreatedAt.Format("2006-01-02 15:04:05"), "1", 1, "C", false, 0, "")
 	}
 

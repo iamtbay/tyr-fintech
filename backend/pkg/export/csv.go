@@ -14,7 +14,7 @@ func TransactionsToCSV(transactions []*models.Transaction) ([]byte, error) {
 	writer := csv.NewWriter(&buf)
 
 	headers := []string{
-		"Transaction ID", "Sender", "Receiver", "Amount", "Status", "Date",
+		"Transaction ID", "Sender", "Receiver", "Amount", "Converted Amount", "Status", "Date",
 	}
 	if err := writer.Write(headers); err != nil {
 		return nil, err
@@ -26,6 +26,7 @@ func TransactionsToCSV(transactions []*models.Transaction) ([]byte, error) {
 			fmt.Sprintf("%d", tx.FromWalletNumber),
 			fmt.Sprintf("%d", tx.ToWalletNumber),
 			fmt.Sprintf("%d", tx.Amount),
+			fmt.Sprintf("%d", tx.ConvertedAmount),
 			string(tx.Status),
 			tx.CreatedAt.Format("2006-01-02 15:04:05"),
 		}

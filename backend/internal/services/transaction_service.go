@@ -9,25 +9,49 @@ import (
 	"github.com/iamtbay/tyr-fintech/internal/worker"
 )
 
+// ExhangeService interface
+type ExhangeService interface {
+	GetRate(ctx context.Context, from, to models.WalletCurrency) (float64, error)
+}
+
 type TransactionRepository interface {
-	Transfer(ctx context.Context, req *dto.TransferRequest) error
+	Transfer(ctx context.Context, req *dto.TransferRequest, convertedAmount int64) error
 	GetTransactionsByWalletID(ctx context.Context, walletID string) ([]*models.Transaction, error)
 }
 
 type TransactionService struct {
-	repo TransactionRepository
+	repo            TransactionRepository
+	exchangeService ExhangeService
+	walletRepo      WalletRepository
 }
 
-func NewTransactionService(repo TransactionRepository) *TransactionService {
-	return &TransactionService{repo: repo}
+func NewTransactionService(repo TransactionRepository, exchangeService ExhangeService, walletRepo WalletRepository) *TransactionService {
+	return &TransactionService{repo: repo, exchangeService: exchangeService, walletRepo: walletRepo}
 }
 
 // Transfer
 func (s *TransactionService) Transfer(ctx context.Context, req *dto.TransferRequest) error {
 	if req.TransactionID == "" {
-		return errors.New("idempotency key is required")
+		return errors.New("Transaction request missing required idempotency key.")
 	}
-	err := s.repo.Transfer(ctx, req)
+	sender, err := s.walletRepo.GetWalletByID(ctx, req.FromWalletNumber)
+	if err != nil {
+		return err
+	}
+	receiver, err := s.walletRepo.GetWalletByID(ctx, req.ToWalletNumber)
+	if err != nil {
+		return err
+	}
+
+	//convert
+	rate, err := s.exchangeService.GetRate(ctx, sender.Currency, receiver.Currency)
+	if err != nil {
+		return err
+	}
+	convertedAmount := int64(float64(req.Amount) * rate)
+
+	//transfer
+	err = s.repo.Transfer(ctx, req, convertedAmount)
 	if err != nil {
 		return err
 	}

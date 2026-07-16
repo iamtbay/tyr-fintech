@@ -33,6 +33,10 @@ func Connect() (*PostgresDB, error) {
 	if err != nil {
 		fmt.Printf("Warning: failed to backfill missing wallet numbers: %v\n", err)
 	}
+	_, err = pool.Exec(context.Background(), `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS converted_amount BIGINT;`)
+	if err != nil {
+		fmt.Printf("Warning: failed to add converted_amount column to transactions table: %v\n", err)
+	}
 	fmt.Println("Successfully connected to PostgresDB")
 	return &PostgresDB{DB: pool}, nil
 }

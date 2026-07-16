@@ -10,23 +10,35 @@ import (
 )
 
 type mockWalletRepository struct {
-	funcCreate      func(ctx context.Context, wallet *models.Wallet) error
-	funcGetByUserID func(ctx context.Context, userID string) ([]*models.Wallet, error)
-	funcGetByID     func(ctx context.Context, walletID string) (int64, error)
-	funcDelete      func(ctx context.Context, userID, walletID string) error
+	funcCreate        func(ctx context.Context, wallet *models.Wallet) error
+	funcGetByUserID   func(ctx context.Context, userID string) ([]*models.Wallet, error)
+	funcGetWalletByID func(ctx context.Context, walletID int64) (*models.WalletResponse, error)
+	funcDelete        func(ctx context.Context, userID, walletID string) error
 }
 
 func (m *mockWalletRepository) Create(ctx context.Context, wallet *models.Wallet) error {
-	return m.funcCreate(ctx, wallet)
+	if m.funcCreate != nil {
+		return m.funcCreate(ctx, wallet)
+	}
+	return nil
 }
-func (m *mockWalletRepository) GetByID(ctx context.Context, walletID string) (int64, error) {
-	return m.funcGetByID(ctx, walletID)
+func (m *mockWalletRepository) GetWalletByID(ctx context.Context, walletID int64) (*models.WalletResponse, error) {
+	if m.funcGetWalletByID != nil {
+		return m.funcGetWalletByID(ctx, walletID)
+	}
+	return &models.WalletResponse{Balance: 1000, Currency: models.CurrencyUSD}, nil
 }
 func (m *mockWalletRepository) GetByUserID(ctx context.Context, userID string) ([]*models.Wallet, error) {
-	return m.funcGetByUserID(ctx, userID)
+	if m.funcGetByUserID != nil {
+		return m.funcGetByUserID(ctx, userID)
+	}
+	return nil, nil
 }
 func (m *mockWalletRepository) Delete(ctx context.Context, userID, walletID string) error {
-	return m.funcDelete(ctx, userID, walletID)
+	if m.funcDelete != nil {
+		return m.funcDelete(ctx, userID, walletID)
+	}
+	return nil
 }
 
 // TESTS
@@ -59,7 +71,7 @@ func TestWalletService_DeleteWallet(t *testing.T) {
 			inputUserID:   "1",
 			inputWalletID: "1",
 			mockBalance:   10,
-			mockCreateErr: errors.New("cannot delete with balance greater than 0"),
+			mockCreateErr: errors.New("Cannot delete a wallet with a non-zero balance. Please empty or transfer funds first."),
 			wantErr:       true,
 		},
 	}
@@ -68,12 +80,6 @@ func TestWalletService_DeleteWallet(t *testing.T) {
 			mockRepo := &mockWalletRepository{
 				funcDelete: func(ctx context.Context, userID, walletID string) error {
 					return tt.mockCreateErr
-				},
-				funcGetByID: func(ctx context.Context, walletID string) (int64, error) {
-					if tt.name == "wallet not found" {
-						return 0, errors.New("wallet not found")
-					}
-					return tt.mockBalance, nil
 				},
 			}
 			service := services.NewWalletService(mockRepo)
