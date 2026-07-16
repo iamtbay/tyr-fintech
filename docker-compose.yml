@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secretpassword
+      - POSTGRES_DB=fintech
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U admin -d fintech"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - DATABASE_URL=postgres://admin:secretpassword@db:5432/fintech?sslmode=disable
+      - JWT_SECRET=my_secret_key
+      - ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+  
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+volumes:
+  pgdata:
+
+      

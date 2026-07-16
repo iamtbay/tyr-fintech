@@ -1,0 +1,35 @@
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Windows / macOS System Files
+Thumbs.db
+.DS_Store
+
+# --- BACKEND (Go) ---
+backend/.env
+backend/*.env
+
+backend/api
+backend/main
+backend/*.exe
+backend/*.test
+
+# --- FRONTEND (React) ---
+# Node libs
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache

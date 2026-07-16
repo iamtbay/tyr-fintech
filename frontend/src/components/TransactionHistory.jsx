@@ -1,0 +1,173 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowUpRight, ArrowDownLeft, Calendar, Copy, Hash, FileDown } from 'lucide-react';
+import api from '../lib/axios';
+
+const getCurrencySymbol = (currency) => {
+  switch (currency?.toUpperCase()) {
+    case 'TRY':
+      return '₺';
+    case 'USD':
+      return '$';
+    case 'EUR':
+      return '€';
+    default:
+      return '¤';
+  }
+};
+
+export default function TransactionHistory({ walletId, currency, refreshKey, addToast }) {
+  const [transactions, setTransactions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get(`/transactions/${walletId}`);
+      setTransactions(response.data.data || []);
+    } catch (error) {
+      addToast(error.response?.data?.error || 'Failed to fetch transaction history', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [walletId, addToast]);
+
+  useEffect(() => {
+    if (walletId) {
+      fetchHistory();
+    }
+  }, [fetchHistory, refreshKey, walletId]);
+
+  const handleCopyTxId = (id) => {
+    navigator.clipboard.writeText(id);
+    addToast('Transaction ID copied to clipboard', 'success');
+  };
+
+  const formatDate = (date) => {
+    return new Intl.DateTimeFormat("en-US", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(date);
+  };
+
+  const formatAmount = (tx) => {
+    const isSent = tx.from_wallet_id?.toLowerCase() === walletId?.toLowerCase();
+    const value = tx.amount / 100;
+    const formattedValue = value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const symbol = getCurrencySymbol(currency);
+    return isSent ? `-${symbol}${formattedValue}` : `+${symbol}${formattedValue}`;
+  };
+
+  const handleExport = async (format) => {
+    if (!walletId) return;
+    setIsExporting(true);
+    try {
+      const response = await api.get(`/transactions/${walletId}/export`, {
+        params: { format },
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { 
+        type: format === 'pdf' ? 'application/pdf' : 'text/csv' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `statement_${walletId.substring(0, 8)}.${format}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      addToast(`${format.toUpperCase()} statement downloaded successfully`, 'success');
+    } catch {
+      addToast('Failed to export statement', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel rounded-3xl p-6 shadow-xl animate-slide-up">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Hash className="w-5 h-5 text-primary" /> Transaction History
+        </h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleExport('csv')}
+            disabled={isExporting || isLoading || transactions.length === 0}
+            className="text-xs font-medium text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileDown className="w-3.5 h-3.5" /> CSV
+          </button>
+          <button
+            onClick={() => handleExport('pdf')}
+            disabled={isExporting || isLoading || transactions.length === 0}
+            className="text-xs font-medium text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileDown className="w-3.5 h-3.5" /> PDF
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-white/60 text-sm">Loading transactions...</div>
+      ) : transactions.length === 0 ? (
+        <div className="text-white/40 text-sm py-4">No transactions found for this wallet.</div>
+      ) : (
+        <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+          {transactions.map((tx) => {
+            const isSent = tx.from_wallet_id?.toLowerCase() === walletId?.toLowerCase();
+            return (
+              <div 
+                key={tx.id} 
+                className="flex items-center justify-between p-3.5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                    isSent ? 'bg-red-500/10 text-red-400' : 'bg-secondary/10 text-secondary'
+                  }`}>
+                    {isSent ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => handleCopyTxId(tx.id)}
+                      className="text-sm font-semibold text-white flex items-center gap-1.5 hover:text-primary transition-colors bg-transparent border-0 cursor-pointer"
+                    >
+                      <span>{isSent ? 'Sent' : 'Received'}</span>
+                      <span className="text-xs text-white/30 font-mono">({tx.id.substring(0, 8)})</span>
+                      <Copy className="w-3 h-3 text-white/40" />
+                    </button>
+                    <div className="text-xs text-white/40 flex items-center gap-1 mt-0.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>{formatDate(new Date(tx.created_at))}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-base font-bold ${
+                    isSent ? 'text-red-400' : 'text-emerald-400'
+                  }`}>
+                    {formatAmount(tx)}
+                  </span>
+                  <div className="mt-0.5">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                      tx.status === 'COMPLETED' ? 'bg-secondary/20 text-secondary' :
+                      tx.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {tx.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
