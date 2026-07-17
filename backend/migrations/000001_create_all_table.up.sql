@@ -32,3 +32,20 @@ CREATE TABLE idempotency_keys (
     key VARCHAR(255) PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS cards (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    wallet_id UUID NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+    card_number VARCHAR(16) UNIQUE NOT NULL,
+    cvv VARCHAR(3) NOT NULL,
+    expiry_month INT NOT NULL CHECK (expiry_month BETWEEN 1 AND 12),
+    expiry_year INT NOT NULL,
+    limit_amount BIGINT NOT NULL DEFAULT 0 CHECK (limit_amount >= 0),
+    spent_amount BIGINT NOT NULL DEFAULT 0 CHECK (spent_amount >= 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'FROZEN', 'CLOSED')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE INDEX IF NOT EXISTS idx_cards_card_number ON cards(card_number);

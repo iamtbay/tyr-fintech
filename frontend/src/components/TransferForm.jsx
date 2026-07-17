@@ -212,7 +212,12 @@ export default function TransferForm({ wallets, onTransfer, getCurrencySymbol })
               required
               placeholder="e.g. 1000000000"
               value={toWalletNumber}
-              onChange={(e) => setToWalletNumber(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.length <= 10) {
+                  setToWalletNumber(val);
+                }
+              }}
               className="glass-input w-full !pl-11"
             />
           </div>
