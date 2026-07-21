@@ -2,9 +2,11 @@ package services_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/iamtbay/tyr-fintech/internal/models"
+	"github.com/iamtbay/tyr-fintech/internal/notifications"
 	"github.com/iamtbay/tyr-fintech/internal/services"
 )
 
@@ -58,7 +60,22 @@ func (m *mockCardRepository) ProcessPayment(ctx context.Context, transactionID, 
 	}
 	return &models.CardPaymentResult{
 		TransactionID: transactionID,
+		UserID:        "user-123",
+		UserEmail:     "user@test.com",
+		UserName:      "Test User",
+		MerchantName:  merchantName,
+		Amount:        amount,
 	}, nil
+}
+
+type mockNotificationService struct {
+	notifyUserFunc func(event *notifications.NotificationEvent)
+}
+
+func (m *mockNotificationService) NotifyUser(event *notifications.NotificationEvent) {
+	if m.notifyUserFunc != nil {
+		m.notifyUserFunc(event)
+	}
 }
 
 // tests
@@ -78,6 +95,14 @@ func TestCardService_CreateCard(t *testing.T) {
 			limitAmount: 50000,
 			mockCardErr: nil,
 			wantErr:     false,
+		},
+		{
+			name:        "Failed Create Card",
+			userID:      "user-123",
+			walletID:    "wallet-abc",
+			limitAmount: 50000,
+			mockCardErr: errors.New("db error"),
+			wantErr:     true,
 		},
 	}
 
@@ -111,5 +136,120 @@ func TestCardService_CreateCard(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCardService_GetCardsByUserID(t *testing.T) {
+	mockRepo := &mockCardRepository{
+		getByUserIDFunc: func(ctx context.Context, userID string) ([]models.Card, error) {
+			if userID == "user-123" {
+				return []models.Card{{ID: "card-1", UserID: userID}}, nil
+			}
+			return nil, errors.New("user not found")
+		},
+	}
+
+	service := services.NewCardService(mockRepo, nil)
+
+	cards, err := service.GetCardsByUserID(context.Background(), "user-123")
+	if err != nil {
+		t.Errorf("GetCardsByUserID() unexpected error = %v", err)
+	}
+	if len(cards) != 1 {
+		t.Errorf("GetCardsByUserID() got %d cards, want 1", len(cards))
+	}
+}
+
+func TestCardService_GetCardDetails(t *testing.T) {
+	mockRepo := &mockCardRepository{
+		getCardDetailsFunc: func(ctx context.Context, cardID, userID string) (*models.Card, error) {
+			if cardID == "card-1" && userID == "user-123" {
+				return &models.Card{ID: cardID, UserID: userID, CardNumber: "1234567812345678"}, nil
+			}
+			return nil, errors.New("card not found")
+		},
+	}
+
+	service := services.NewCardService(mockRepo, nil)
+
+	card, err := service.GetCardDetails(context.Background(), "card-1", "user-123")
+	if err != nil {
+		t.Errorf("GetCardDetails() unexpected error = %v", err)
+	}
+	if card == nil || card.CardNumber != "1234567812345678" {
+		t.Errorf("GetCardDetails() invalid card details returned")
+	}
+}
+
+func TestCardService_UpdateCardStatus(t *testing.T) {
+	mockRepo := &mockCardRepository{
+		updateStatusFunc: func(ctx context.Context, cardID, userID string, status models.CardStatus) error {
+			if status == models.CardStatusFrozen {
+				return nil
+			}
+			return errors.New("update status error")
+		},
+	}
+
+	service := services.NewCardService(mockRepo, nil)
+
+	err := service.UpdateCardStatus(context.Background(), "card-1", "user-123", models.CardStatusFrozen)
+	if err != nil {
+		t.Errorf("UpdateCardStatus() unexpected error = %v", err)
+	}
+}
+
+func TestCardService_ProcessPayment(t *testing.T) {
+	var notifiedEvent *notifications.NotificationEvent
+
+	mockNotif := &mockNotificationService{
+		notifyUserFunc: func(event *notifications.NotificationEvent) {
+			notifiedEvent = event
+		},
+	}
+
+	mockRepo := &mockCardRepository{
+		processPaymentFunc: func(ctx context.Context, transactionID, cardID, cvv string, expiryMonth, expiryYear int, amount int64, merchantName string) (*models.CardPaymentResult, error) {
+			if amount > 100000 {
+				return nil, errors.New("limit exceeded")
+			}
+			return &models.CardPaymentResult{
+				TransactionID: transactionID,
+				UserID:        "user-123",
+				UserEmail:     "john@example.com",
+				UserName:      "John Doe",
+				MerchantName:  merchantName,
+				Amount:        amount,
+			}, nil
+		},
+	}
+
+	service := services.NewCardService(mockRepo, mockNotif)
+
+	// Test Payment Success
+	txID, err := service.ProcessPayment(context.Background(), "card-1", "123", 12, 2028, 1100, "Supermarket")
+	if err != nil {
+		t.Fatalf("ProcessPayment() unexpected error = %v", err)
+	}
+	if txID == "" {
+		t.Error("ProcessPayment() expected non-empty transaction ID")
+	}
+
+	// Verify notification payload formatting (1100 cents -> "11.00")
+	if notifiedEvent == nil {
+		t.Fatal("ProcessPayment() expected notification to be dispatched")
+	}
+	if notifiedEvent.UserID != "user-123" {
+		t.Errorf("Notification UserID got %v, want user-123", notifiedEvent.UserID)
+	}
+	expectedMsg := "Payment of 11.00 to Supermarket was processed successfully."
+	if notifiedEvent.Message != expectedMsg {
+		t.Errorf("Notification Message got %q, want %q", notifiedEvent.Message, expectedMsg)
+	}
+
+	// Test Payment Failure
+	_, errFail := service.ProcessPayment(context.Background(), "card-1", "123", 12, 2028, 500000, "Expensive Shop")
+	if errFail == nil {
+		t.Error("ProcessPayment() expected error for amount exceeding limit")
 	}
 }

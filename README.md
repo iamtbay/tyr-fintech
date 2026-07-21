@@ -1,6 +1,6 @@
 # Tyr Fintech
 
-Tyr Fintech is a modern, high-performance, and secure multi-currency digital wallet and virtual card application. It features a robust **Go (Gin-gonic)** backend that guarantees transaction consistency and ACID compliance, paired with a custom **glassmorphic React SPA** frontend powered by **TanStack Query**.
+Tyr Fintech is a modern, high-performance, and secure multi-currency digital wallet and virtual card application. It features a robust **Go (Gin-gonic)** backend that guarantees transaction consistency and ACID compliance, paired with a custom **glassmorphic React SPA** frontend powered by **TanStack Query** and real-time **Server-Sent Events (SSE)**.
 
 ---
 
@@ -9,6 +9,8 @@ Tyr Fintech is a modern, high-performance, and secure multi-currency digital wal
 ### Backend
 * **Language**: Go 1.26+
 * **Web Framework**: Gin-Gonic (high performance, routing, middlewares)
+* **Rate Limiting**: `golang.org/x/time/rate` (Token bucket algorithm for IP/route rate limiting)
+* **Real-time Engine**: Server-Sent Events (SSE Hub & background email/worker queues)
 * **Database Driver**: PGX v5 (connection pooling, native Postgres integration)
 * **Database**: PostgreSQL 16 (relational database with transaction isolation)
 * **Migrations**: Golang-migrate (versioned database migrations)
@@ -29,29 +31,42 @@ Tyr Fintech is a modern, high-performance, and secure multi-currency digital wal
 
 ## 🔒 Key Design & Features
 
-1. **Virtual Card Ecosystem**:
+1. **Real-time Server-Sent Events (SSE) Notifications**:
+   - Live streaming notification engine (`GET /api/v1/notifications/stream`).
+   - Instant push alerts dispatched upon **Money Transfers** and **Virtual Card Payments**.
+   - Currency amounts formatted cleanly to 2 decimal places (e.g. `11.00 EUR` or `50.00 TRY`).
+   - Interactive TopBar Notification Bell with unread counter badges, live notification drawer, clear/mark-as-read actions, and click-outside-to-close handlers.
+   - Automatic React Query cache invalidation on notification events so wallet balances and transaction logs update live across the dashboard.
+
+2. **Route-Based Rate Limiting Middleware**:
+   - Custom Go Token Bucket rate limiter (`internal/middleware/rate_limiter.go`).
+   - Configured with strict limits on auth endpoints (`5 requests/min` for `/register` and `/login`) to block credential stuffing.
+   - Configured with standard limits (`100 requests/min`) for protected API routes.
+   - Dynamic RFC-compliant `Retry-After` header returned on `HTTP 429 Too Many Requests`.
+
+3. **Virtual Card Ecosystem**:
    * Issue virtual Visa/Mastercards directly linked to specific wallet balances (enforced **1 card limit per wallet currency**).
    * Freeze/Unfreeze cards instantly to restrict unauthorized usage.
    * View card spendings and process test merchant payments on demand.
    * View masked card numbers by default with secure unmasking (`CVV` and 16-digit card number) upon user request.
    * Interactive single-card sliding carousel UI.
 
-2. **Transaction Integrity (ACID)**:
+4. **Transaction Integrity (ACID)**:
    * Implements **pessimistic row-level locking (`FOR UPDATE`)** in Go transactions when updating wallet balances.
    * Prevents **"Lost Update"** concurrency bugs during simultaneous transfers or card payments.
 
-3. **Idempotency Protection**:
+5. **Idempotency Protection**:
    * The `/transfer` endpoint accepts an `X-Idempotency-Key` header.
    * Prevents duplicate requests (e.g., due to network retries or double clicks) from executing multiple transfers.
 
-4. **Dynamic Exchange Rates & Destination Lookup**:
+6. **Dynamic Exchange Rates & Destination Lookup**:
    * Automatic 500ms debounced recipient verification when typing destination wallet numbers.
    * Live exchange rate calculations (`GET /exchange-rate`) displaying exact recipient amounts.
 
-5. **JWT Auth via HttpOnly Cookies**:
+7. **JWT Auth via HttpOnly Cookies**:
    * Secure authentication with JSON Web Tokens (JWT) stored in HTTP-Only, Secure cookies to prevent XSS token theft.
 
-6. **Executive PDF & CSV Statement Exports**:
+8. **Executive PDF & CSV Statement Exports**:
    * Download sleek, executive account statements formatted as **PDF** or **CSV**.
    * Features branded header banners, transaction summaries, decimal currency formatting, and card merchant descriptions.
 
@@ -67,9 +82,10 @@ Tyr Fintech is a modern, high-performance, and secure multi-currency digital wal
 │   ├── internal/            # Core business logic
 │   │   ├── db/              # Postgres connections and pool configuration
 │   │   ├── dto/             # Request/Response Data Transfer Objects
-│   │   ├── handlers/        # Gin controllers and router definitions
-│   │   ├── middleware/      # Auth and CORS middlewares
+│   │   ├── handlers/        # Gin controllers (User, Wallet, Tx, Card, Notification)
+│   │   ├── middleware/      # Auth, CORS, and Rate Limiting middlewares
 │   │   ├── models/          # Relational struct models (Wallet, Card, Transaction)
+│   │   ├── notifications/   # SSE Hub and notification dispatcher
 │   │   ├── repos/           # Database access layer (SQL queries and transactions)
 │   │   ├── services/        # Business logic (Cards, Exchange rates, Transfers)
 │   │   └── worker/          # Asynchronous webhook queues/workers
@@ -80,13 +96,14 @@ Tyr Fintech is a modern, high-performance, and secure multi-currency digital wal
 ├── frontend/                # Frontend source code
 │   ├── public/              # Static assets
 │   ├── src/                 # React frontend source files
-│   │   ├── components/      # UI components (CardsSection, TransferForm, SpendingsModal)
+│   │   ├── components/      # UI components (CardsSection, TransferForm, TopBar, ToastContainer)
 │   │   ├── context/         # Auth state providers
-│   │   ├── hooks/           # TanStack Query custom hooks (useQueries.js)
+│   │   ├── hooks/           # TanStack Query & SSE hooks (useQueries.js, useNotificationStream.js)
 │   │   ├── lib/             # Axios API config
 │   │   └── pages/           # Pages (Dashboard, Login, Register)
 │   ├── Dockerfile           # Multistage frontend build served via Nginx
 │   └── nginx.conf           # Custom Nginx configuration
+├── futuretasks.md           # Roadmap and architectural trade-offs document
 └── docker-compose.yml       # Orchestrated system (Frontend + Backend + DB)
 ```
 
@@ -169,9 +186,12 @@ go test -v ./...
 ## 📡 API Reference
 
 ### Auth
-* **`POST /api/v1/auth/register`**: Registers a new user.
-* **`POST /api/v1/auth/login`**: Authenticates user and sets HttpOnly JWT cookie.
+* **`POST /api/v1/auth/register`**: Registers a new user (Rate limited: 5 req/min).
+* **`POST /api/v1/auth/login`**: Authenticates user and sets HttpOnly JWT cookie (Rate limited: 5 req/min).
 * **`POST /api/v1/logout`** (Protected): Clears user session.
+
+### Real-time Notifications
+* **`GET /api/v1/notifications/stream`** (Protected): Opens an SSE connection for live notification streaming.
 
 ### Wallets
 * **`GET /api/v1/wallets`** (Protected): Retrieves all wallets owned by the authenticated user.

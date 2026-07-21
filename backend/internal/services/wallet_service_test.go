@@ -50,6 +50,77 @@ func (m *mockWalletRepository) VerifyWallet(ctx context.Context, walletID int64)
 }
 
 // TESTS
+func TestWalletService_CreateWallet(t *testing.T) {
+	mockRepo := &mockWalletRepository{
+		funcCreate: func(ctx context.Context, wallet *models.Wallet) error {
+			if wallet.Currency == models.CurrencyUSD {
+				return nil
+			}
+			return errors.New("invalid currency")
+		},
+	}
+
+	service := services.NewWalletService(mockRepo)
+
+	err := service.CreateWallet(context.Background(), &dto.CreateWallet{
+		UserID:   "user-123",
+		Currency: models.CurrencyUSD,
+	})
+	if err != nil {
+		t.Errorf("CreateWallet() unexpected error = %v", err)
+	}
+
+	errInvalid := service.CreateWallet(context.Background(), &dto.CreateWallet{
+		UserID:   "user-123",
+		Currency: "INVALID",
+	})
+	if errInvalid == nil {
+		t.Error("CreateWallet() expected error for invalid currency")
+	}
+}
+
+func TestWalletService_GetByUserID(t *testing.T) {
+	mockRepo := &mockWalletRepository{
+		funcGetByUserID: func(ctx context.Context, userID string) ([]*models.Wallet, error) {
+			if userID == "user-123" {
+				return []*models.Wallet{{ID: "w-1", UserID: userID, Currency: models.CurrencyTRY}}, nil
+			}
+			return nil, errors.New("no wallets found")
+		},
+	}
+
+	service := services.NewWalletService(mockRepo)
+
+	wallets, err := service.GetByUserID(context.Background(), "user-123")
+	if err != nil {
+		t.Errorf("GetByUserID() unexpected error = %v", err)
+	}
+	if len(wallets) != 1 {
+		t.Errorf("GetByUserID() got %d wallets, want 1", len(wallets))
+	}
+}
+
+func TestWalletService_VerifyWallet(t *testing.T) {
+	mockRepo := &mockWalletRepository{
+		funcVerifyWallet: func(ctx context.Context, walletID int64) (*dto.WalletLookUpResult, error) {
+			if walletID == 100020003000 {
+				return &dto.WalletLookUpResult{OwnerName: "Jane Doe", Currency: models.CurrencyTRY}, nil
+			}
+			return nil, errors.New("wallet not found")
+		},
+	}
+
+	service := services.NewWalletService(mockRepo)
+
+	res, err := service.VerifyWallet(context.Background(), 100020003000)
+	if err != nil {
+		t.Errorf("VerifyWallet() unexpected error = %v", err)
+	}
+	if res == nil || res.OwnerName != "Jane Doe" {
+		t.Errorf("VerifyWallet() returned incorrect owner result")
+	}
+}
+
 func TestWalletService_DeleteWallet(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -97,5 +168,4 @@ func TestWalletService_DeleteWallet(t *testing.T) {
 			}
 		})
 	}
-
 }
